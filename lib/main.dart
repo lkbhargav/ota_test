@@ -133,65 +133,66 @@ class _MyHomePageState extends State<MyHomePage> {
             ElevatedButton(
               child: Text("Perform OTA"),
               onPressed: () async {
-                // if (!fileInitialized) {
-                await _bleHandler.sendFileControl(
-                  FileControlType.initOTALeftCore,
-                );
-                var fileContent = await rootBundle.load('assets/ota.bin');
+                if (!fileInitialized) {
+                  await _bleHandler.sendFileControl(
+                    FileControlType.initOTALeftCore,
+                  );
+                  var fileContent = await rootBundle.load('assets/ota.bin');
 
-                _ota = OtaRelated(fileContent);
-                // fileInitialized = true;
-                // return;
+                  _ota = OtaRelated(fileContent);
+                  fileInitialized = true;
+                  return;
+                }
+
+                // var dataSent = false;
+
+                // while (true) {
+                // if (dataSent) {
+                //   if (dataReceived == null) {
+                //     await Future.delayed(Duration(milliseconds: 200));
+                //     continue;
+                //   }
+
+                //   var receivedData = dataReceived!;
+
+                //   var checksumComputed = _ota.crc32();
+                //   var index = _ota.getIndex();
+
+                //   print(
+                //     "Checksum received: ${receivedData.checksum} (${receivedData.index}) | Computed checksum: $checksumComputed ($index)",
+                //   );
+
+                //   if (receivedData.checksum == checksumComputed &&
+                //       index == receivedData.index) {
+                //     print("Checksum and index matches!");
+
+                //     dataReceived = null;
+                //     dataSent = false;
+                //   }
                 // }
 
-                var dataSent = false;
+                // if (fileInitialized) {
+                var resp = _ota.getNextChunk();
 
-                while (true) {
-                  if (dataSent) {
-                    if (dataReceived == null) {
-                      await Future.delayed(Duration(milliseconds: 200));
-                      continue;
-                    }
-
-                    var receivedData = dataReceived!;
-
-                    var checksumComputed = _ota.crc32();
-                    var index = _ota.getIndex();
-
-                    print(
-                      "Checksum received: ${receivedData.checksum} (${receivedData.index}) | Computed checksum: $checksumComputed ($index)",
-                    );
-
-                    if (receivedData.checksum == checksumComputed &&
-                        index == receivedData.index) {
-                      print("Checksum and index matches!");
-
-                      dataReceived = null;
-                      dataSent = false;
-                    }
-                  }
-
-                  // if (fileInitialized) {
-                  var resp = _ota.getNextChunk();
-
-                  if (resp.$1 != null) {
-                    print(resp.$1!.buffer.asUint8List());
-                  }
-
-                  print("OTA index: ${_ota.getIndex()}");
-
-                  if (resp.$2 == ChunkStatus.end) {
-                    print("End of file");
-                    break;
-                  }
-
-                  await _bleHandler.sendOTAData(resp.$1!, () {
-                    // perform reset operations on the _ota
-                  });
-
-                  dataSent = true;
+                if (resp.$1 != null) {
+                  print(resp.$1!.buffer.asUint8List());
                 }
+
+                print("OTA index: ${_ota.getIndex()}");
+
+                if (resp.$2 == ChunkStatus.end) {
+                  print("End of file");
+                  // break;
+                  return;
+                }
+
+                await _bleHandler.sendOTAData(resp.$1!, () {
+                  // perform reset operations on the _ota
+                });
+
+                // dataSent = true;
               },
+              // },
             ),
           ],
         ),
