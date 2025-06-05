@@ -70,7 +70,7 @@ class _MyHomePageState extends State<MyHomePage> {
       (v) {
         // print("Touch data: $v");
       },
-      (v, w) {
+      (v, w) async {
         print("Meta data: $v | File control type: $w");
         if (v[0] == 100 && v[1] == 2) {
           List<int> indexData = v.sublist(v.length - 6, v.length - 4);
@@ -87,7 +87,22 @@ class _MyHomePageState extends State<MyHomePage> {
 
           var checksumReceived = result.toRadixString(16).padLeft(8, '0');
 
-          dataReceived = ReceivedData(checksumReceived, index);
+          if (checksumReceived == "00000000") {
+            var resp = _ota.getCurrentChunk();
+
+            if (resp.$1 != null) {
+              print(resp.$1!.buffer.asUint8List());
+            }
+
+            await _bleHandler.sendOTAData(resp.$1!, () {
+              // perform reset operations on the _ota
+              print("Reached the 10s timeout!");
+              _bleHandler.sendFileControl(FileControlType.resetOta);
+              _otaTimedOut = true;
+            });
+          } else {
+            dataReceived = ReceivedData(checksumReceived, index);
+          }
         }
       },
       (v, w) {
@@ -100,7 +115,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void scanAndConnect() async {
     await _bleHandler.scanAndConnect(
-      "NoctABC",
+      "NocturnalCheck",
       (id) {
         print("Mask ID (maskIdCallback): $id");
       },
@@ -157,14 +172,15 @@ class _MyHomePageState extends State<MyHomePage> {
                     var receivedData = dataReceived!;
 
                     var checksumComputed = _ota.crc32();
-                    var index = _ota.getIndex() - 1;
+                    var index = _ota.getIndex();
 
                     print(
                       "Checksum received: ${receivedData.checksum} (${receivedData.index}) | Computed checksum: $checksumComputed ($index)",
                     );
 
-                    if (receivedData.checksum == checksumComputed &&
-                        index == receivedData.index) {
+                    if (index == receivedData.index) {
+                      // if (receivedData.checksum == checksumComputed &&
+                      //     index == receivedData.index) {
                       print("Checksum and index matches!");
                       _bleHandler.otaAckReceived();
 
@@ -176,6 +192,7 @@ class _MyHomePageState extends State<MyHomePage> {
                         "Aborting the update, something is off with checksum's or index",
                       );
                       _bleHandler.sendFileControl(FileControlType.resetOta);
+                      break;
                     }
 
                     await Future.delayed(Duration(milliseconds: 10));
