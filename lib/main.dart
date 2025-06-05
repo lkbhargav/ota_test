@@ -41,10 +41,11 @@ class ReceivedData {
 
 class _MyHomePageState extends State<MyHomePage> {
   int _counter = 0;
-  BLEHandler _bleHandler = BLEHandler();
+  final BLEHandler _bleHandler = BLEHandler();
   late OtaRelated _ota;
   bool fileInitialized = false;
   ReceivedData? dataReceived;
+  bool _otaTimedOut = false;
 
   void _incrementCounter() {
     setState(() {
@@ -86,7 +87,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
           var checksumReceived = result.toRadixString(16).padLeft(8, '0');
 
-          ReceivedData(checksumReceived, index);
+          dataReceived = ReceivedData(checksumReceived, index);
         }
       },
       (v, w) {
@@ -95,16 +96,11 @@ class _MyHomePageState extends State<MyHomePage> {
     );
 
     scanAndConnect();
-
-    // _bleHandler.sendFileControl(FileControlType.initOTALeftCore);
-
-    // OtaRelated();
-    // // _bleHandler.sendOTAData();
   }
 
   void scanAndConnect() async {
     await _bleHandler.scanAndConnect(
-      "Nocturnal",
+      "NoctABC",
       (id) {
         print("Mask ID (maskIdCallback): $id");
       },
@@ -137,7 +133,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 await _bleHandler.sendFileControl(
                   FileControlType.initOTALeftCore,
                 );
-                var fileContent = await rootBundle.load('assets/ota.bin');
+                var fileContent = await rootBundle.load('assets/ota_left.bin');
 
                 _ota = OtaRelated(fileContent);
                 // fileInitialized = true;
@@ -147,16 +143,21 @@ class _MyHomePageState extends State<MyHomePage> {
                 var dataSent = false;
 
                 while (true) {
+                  if (_otaTimedOut) {
+                    _otaTimedOut = false;
+                    break;
+                  }
+
                   if (dataSent) {
                     if (dataReceived == null) {
-                      await Future.delayed(Duration(milliseconds: 200));
+                      await Future.delayed(Duration(milliseconds: 10));
                       continue;
                     }
 
                     var receivedData = dataReceived!;
 
                     var checksumComputed = _ota.crc32();
-                    var index = _ota.getIndex();
+                    var index = _ota.getIndex() - 1;
 
                     print(
                       "Checksum received: ${receivedData.checksum} (${receivedData.index}) | Computed checksum: $checksumComputed ($index)",
@@ -165,10 +166,20 @@ class _MyHomePageState extends State<MyHomePage> {
                     if (receivedData.checksum == checksumComputed &&
                         index == receivedData.index) {
                       print("Checksum and index matches!");
+                      _bleHandler.otaAckReceived();
 
                       dataReceived = null;
                       dataSent = false;
+                    } else {
+                      // TODO: send out a reset signal
+                      print(
+                        "Aborting the update, something is off with checksum's or index",
+                      );
+                      _bleHandler.sendFileControl(FileControlType.resetOta);
                     }
+
+                    await Future.delayed(Duration(milliseconds: 10));
+                    continue;
                   }
 
                   // if (fileInitialized) {
@@ -178,15 +189,21 @@ class _MyHomePageState extends State<MyHomePage> {
                     print(resp.$1!.buffer.asUint8List());
                   }
 
-                  print("OTA index: ${_ota.getIndex()}");
-
                   if (resp.$2 == ChunkStatus.end) {
                     print("End of file");
+                    _bleHandler.sendFileControl(FileControlType.otaFileEndLeft);
                     break;
                   }
 
                   await _bleHandler.sendOTAData(resp.$1!, () {
                     // perform reset operations on the _ota
+                    print("Reached the 10s timeout!");
+                    _bleHandler.sendFileControl(FileControlType.resetOta);
+                    _otaTimedOut = true;
+                  });
+
+                  setState(() {
+                    _counter = _ota.getIndex();
                   });
 
                   dataSent = true;

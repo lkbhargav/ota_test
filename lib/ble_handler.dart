@@ -140,9 +140,11 @@ class BLEHandler {
             for (ScanResult r in results) {
               if (r.device.platformName.isEmpty) continue;
 
+              // print(r.device.platformName);
+              // r.device.platformName.contains(deviceId)
+              // if (r.device.platformName.trim() == deviceId) {
               if (r.device.platformName.contains(deviceId)) {
-                maskIdCallback(r.device.remoteId.toString());
-                connect(r.device);
+                connect(r.device, maskIdCallback, r.device.remoteId.toString());
                 return;
               }
             }
@@ -167,7 +169,11 @@ class BLEHandler {
   }
 
   // Device connection
-  Future<bool> connect(BluetoothDevice peripheral) async {
+  Future<bool> connect(
+    BluetoothDevice peripheral,
+    Function(String) maskIdCallback,
+    String remoteId,
+  ) async {
     try {
       // Cancel scanning
       await FlutterBluePlus.stopScan();
@@ -183,6 +189,8 @@ class BLEHandler {
 
       _isConnected = true;
 
+      maskIdCallback(remoteId);
+
       // Discover services
       List<BluetoothService> services = await peripheral.discoverServices();
       for (BluetoothService service in services) {
@@ -190,6 +198,7 @@ class BLEHandler {
             in service.characteristics) {
           // Check for the write property
           if (characteristic.properties.write) {
+            print(characteristic.uuid.toString());
             switch (characteristic.uuid.toString().toUpperCase()) {
               case controlUUID:
                 print("Initialized mask control write characteristic");
