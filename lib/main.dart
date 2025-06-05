@@ -72,7 +72,7 @@ class _MyHomePageState extends State<MyHomePage> {
       (v, w) {
         print("Meta data: $v | File control type: $w");
         if (v[0] == 100 && v[1] == 2) {
-          List<int> indexData = v.sublist(v.length - 6, v.length - 5);
+          List<int> indexData = v.sublist(v.length - 6, v.length - 4);
           List<int> lastFour = v.sublist(v.length - 4);
 
           int index = (indexData[0] << 8) | (indexData[1]);
