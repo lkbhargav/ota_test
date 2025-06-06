@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:n2v2_test/ble_handler.dart';
@@ -46,20 +49,23 @@ class _MyHomePageState extends State<MyHomePage> {
   bool fileInitialized = false;
   ReceivedData? dataReceived;
   bool _otaTimedOut = false;
-
-  void _incrementCounter() {
-    setState(() {
-      _counter++;
-    });
-  }
+  List<String> list = ["1", "2", "3", "Custom"];
+  String dropdownValue = "1";
+  final TextEditingController _deviceIdController = TextEditingController();
+  bool _isConnected = false;
 
   @override
   void initState() {
     super.initState();
 
+    _deviceIdController.text = "NocturnalCheck";
+
     _bleHandler.init(
       (v) {
-        // print("Callback: $v");
+        print("In connection callback: $v");
+        setState(() {
+          _isConnected = v;
+        });
       },
       (v) {
         // print("Sensor data: $v");
@@ -115,7 +121,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void scanAndConnect() async {
     await _bleHandler.scanAndConnect(
-      "NocturnalCheck",
+      _deviceIdController.text,
       (id) {
         print("Mask ID (maskIdCallback): $id");
       },
@@ -127,6 +133,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    print("isConnected: $_isConnected");
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -136,105 +143,173 @@ class _MyHomePageState extends State<MyHomePage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            const Text('You have pushed the button this many times:'),
+            Text('You are ${_isConnected ? 'Connected' : 'Disconnected'}'),
             Text(
               '$_counter',
               style: Theme.of(context).textTheme.headlineMedium,
             ),
+            SizedBox(height: 20),
+            DropdownButton<String>(
+              value: dropdownValue,
+              icon: const Icon(Icons.arrow_downward),
+              elevation: 16,
+              style: const TextStyle(color: Colors.deepPurple),
+              underline: Container(height: 2, color: Colors.deepPurpleAccent),
+              onChanged: (String? value) {
+                // This is called when the user selects an item.
+                setState(() {
+                  dropdownValue = value!;
+                });
+              },
+              items:
+                  list.map<DropdownMenuItem<String>>((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    );
+                  }).toList(),
+            ),
+            SizedBox(height: 20),
+            SizedBox(
+              width: 250,
+              child: TextField(
+                controller: _deviceIdController,
+                decoration: const InputDecoration(
+                  labelText: 'Enter deviceID',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            SizedBox(height: 20),
+            ElevatedButton(
+              child: Text("Scan and connect"),
+              onPressed: () {
+                scanAndConnect();
+              },
+            ),
+            SizedBox(height: 20),
             ElevatedButton(
               child: Text("Perform OTA"),
-              onPressed: () async {
-                // if (!fileInitialized) {
-                await _bleHandler.sendFileControl(
-                  FileControlType.initOTALeftCore,
-                );
-                var fileContent = await rootBundle.load('assets/ota_left.bin');
+              onPressed:
+                  !_isConnected
+                      ? null
+                      : () async {
+                        var filename = 'assets/ota_left.bin';
 
-                _ota = OtaRelated(fileContent);
-                // fileInitialized = true;
-                // return;
-                // }
+                        switch (dropdownValue) {
+                          case '2':
+                            filename = 'assets/mkrzerol.bin';
+                            break;
+                          case '3':
+                            filename = 'assets/wbootloader.bin';
+                            break;
+                        }
 
-                var dataSent = false;
+                        var fileContent;
 
-                while (true) {
-                  if (_otaTimedOut) {
-                    _otaTimedOut = false;
-                    break;
-                  }
+                        if (dropdownValue == 'Custom') {
+                          final result = await FilePicker.platform.pickFiles();
 
-                  if (dataSent) {
-                    if (dataReceived == null) {
-                      await Future.delayed(Duration(milliseconds: 10));
-                      continue;
-                    }
+                          if (result == null || result.files.isEmpty) {
+                            return;
+                          }
 
-                    var receivedData = dataReceived!;
+                          final file = result.files.first;
+                          if (file.path == null) return;
 
-                    var checksumComputed = _ota.crc32();
-                    var index = _ota.getIndex();
+                          final bytes = await File(file.path!).readAsBytes();
+                          fileContent = ByteData.view(bytes.buffer);
+                        } else {
+                          fileContent = await rootBundle.load(filename);
+                        }
 
-                    print(
-                      "Checksum received: ${receivedData.checksum} (${receivedData.index}) | Computed checksum: $checksumComputed ($index)",
-                    );
+                        await _bleHandler.sendFileControl(
+                          FileControlType.initOTALeftCore,
+                        );
 
-                    if (index == receivedData.index) {
-                      // if (receivedData.checksum == checksumComputed &&
-                      //     index == receivedData.index) {
-                      print("Checksum and index matches!");
-                      _bleHandler.otaAckReceived();
+                        _ota = OtaRelated(fileContent);
 
-                      dataReceived = null;
-                      dataSent = false;
-                    } else {
-                      // TODO: send out a reset signal
-                      print(
-                        "Aborting the update, something is off with checksum's or index",
-                      );
-                      _bleHandler.sendFileControl(FileControlType.resetOta);
-                      break;
-                    }
+                        var dataSent = false;
 
-                    await Future.delayed(Duration(milliseconds: 10));
-                    continue;
-                  }
+                        while (true) {
+                          if (_otaTimedOut) {
+                            _otaTimedOut = false;
+                            break;
+                          }
 
-                  // if (fileInitialized) {
-                  var resp = _ota.getNextChunk();
+                          if (dataSent) {
+                            if (dataReceived == null) {
+                              await Future.delayed(Duration(milliseconds: 10));
+                              continue;
+                            }
 
-                  if (resp.$1 != null) {
-                    print(resp.$1!.buffer.asUint8List());
-                  }
+                            var receivedData = dataReceived!;
 
-                  if (resp.$2 == ChunkStatus.end) {
-                    print("End of file");
-                    _bleHandler.sendFileControl(FileControlType.otaFileEndLeft);
-                    break;
-                  }
+                            var checksumComputed = _ota.crc32();
+                            var index = _ota.getIndex();
 
-                  await _bleHandler.sendOTAData(resp.$1!, () {
-                    // perform reset operations on the _ota
-                    print("Reached the 10s timeout!");
-                    _bleHandler.sendFileControl(FileControlType.resetOta);
-                    _otaTimedOut = true;
-                  });
+                            print(
+                              "Checksum received: ${receivedData.checksum} (${receivedData.index}) | Computed checksum: $checksumComputed ($index)",
+                            );
 
-                  setState(() {
-                    _counter = _ota.getIndex();
-                  });
+                            if (index == receivedData.index) {
+                              // if (receivedData.checksum == checksumComputed &&
+                              //     index == receivedData.index) {
+                              print("Checksum and index matches!");
+                              _bleHandler.otaAckReceived();
 
-                  dataSent = true;
-                }
-              },
+                              dataReceived = null;
+                              dataSent = false;
+                            } else {
+                              // TODO: send out a reset signal
+                              print(
+                                "Aborting the update, something is off with checksum's or index",
+                              );
+                              _bleHandler.sendFileControl(
+                                FileControlType.resetOta,
+                              );
+                              break;
+                            }
+
+                            await Future.delayed(Duration(milliseconds: 10));
+                            continue;
+                          }
+
+                          // if (fileInitialized) {
+                          var resp = _ota.getNextChunk();
+
+                          if (resp.$1 != null) {
+                            print(resp.$1!.buffer.asUint8List());
+                          }
+
+                          if (resp.$2 == ChunkStatus.end) {
+                            print("End of file");
+                            _bleHandler.sendFileControl(
+                              FileControlType.otaFileEndLeft,
+                            );
+                            break;
+                          }
+
+                          await _bleHandler.sendOTAData(resp.$1!, () {
+                            // perform reset operations on the _ota
+                            print("Reached the 10s timeout!");
+                            _bleHandler.sendFileControl(
+                              FileControlType.resetOta,
+                            );
+                            _otaTimedOut = true;
+                          });
+
+                          setState(() {
+                            _counter = _ota.getIndex();
+                          });
+
+                          dataSent = true;
+                        }
+                      },
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }

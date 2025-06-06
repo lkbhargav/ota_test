@@ -191,6 +191,8 @@ class BLEHandler {
 
       maskIdCallback(remoteId);
 
+      _deviceStatusCallback(true);
+
       // Discover services
       List<BluetoothService> services = await peripheral.discoverServices();
       for (BluetoothService service in services) {
@@ -241,6 +243,10 @@ class BLEHandler {
     }
 
     return true;
+  }
+
+  bool isConnected() {
+    return _isConnected;
   }
 
   // Manage disconnection to device
@@ -325,7 +331,7 @@ class BLEHandler {
   Future<bool> updateSettings(List<int> writeArr) async {
     if (_isConnected && maskControl != null) {
       try {
-        await maskControl!.write(writeArr);
+        await maskControl!.write(writeArr, withoutResponse: false);
       } catch (e) {
         print('Failed to write characteristic: $e');
         return false;
@@ -372,7 +378,10 @@ class BLEHandler {
     _cuurentFileControlRequest = fct;
 
     try {
-      await fileControl!.write(Uint8List.fromList(instruction));
+      await fileControl!.write(
+        Uint8List.fromList(instruction),
+        withoutResponse: false,
+      );
     } catch (e) {
       // TODO: log the error with appLogs
       print("Error writting: $e");
@@ -387,7 +396,7 @@ class BLEHandler {
       return false;
     }
 
-    otaData!.write(bd.buffer.asUint8List());
+    otaData!.write(bd.buffer.asUint8List(), withoutResponse: false);
 
     // defining the timeout for the write
     _waitingForAckTimer = Timer(Duration(seconds: 10), () {

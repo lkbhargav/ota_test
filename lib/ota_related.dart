@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-const chunkSize = 100;
+const chunkSize = 200;
 const int crc32Polynomial = 0xEDB88320;
 const int crc32Seed = 0xFFFFFFFF;
 
