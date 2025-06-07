@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -10,6 +11,8 @@ void main() {
   runApp(const MyApp());
 }
 
+const default_device_id = "NocturnalCheck";
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -17,19 +20,20 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Firmware loader',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MyHomePage(title: 'Firmware loader'),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
   final String title;
+
+  const MyHomePage({super.key, required this.title});
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
@@ -53,83 +57,9 @@ class _MyHomePageState extends State<MyHomePage> {
   String dropdownValue = "1";
   final TextEditingController _deviceIdController = TextEditingController();
   bool _isConnected = false;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _deviceIdController.text = "NocturnalCheck";
-
-    _bleHandler.init(
-      (v) {
-        print("In connection callback: $v");
-        setState(() {
-          _isConnected = v;
-        });
-      },
-      (v) {
-        // print("Sensor data: $v");
-      },
-      (v) {
-        // print("Battery data: $v");
-      },
-      (v) {
-        // print("Touch data: $v");
-      },
-      (v, w) async {
-        print("Meta data: $v | File control type: $w");
-        if (v[0] == 100 && v[1] == 2) {
-          List<int> indexData = v.sublist(v.length - 6, v.length - 4);
-          List<int> lastFour = v.sublist(v.length - 4);
-
-          int index = (indexData[0] << 8) | (indexData[1]);
-
-          // Convert to a byte buffer in big-endian
-          int result =
-              (lastFour[0] << 24) |
-              (lastFour[1] << 16) |
-              (lastFour[2] << 8) |
-              lastFour[3];
-
-          var checksumReceived = result.toRadixString(16).padLeft(8, '0');
-
-          if (checksumReceived == "00000000") {
-            var resp = _ota.getCurrentChunk();
-
-            if (resp.$1 != null) {
-              print(resp.$1!.buffer.asUint8List());
-            }
-
-            await _bleHandler.sendOTAData(resp.$1!, () {
-              // perform reset operations on the _ota
-              print("Reached the 10s timeout!");
-              _bleHandler.sendFileControl(FileControlType.resetOta);
-              _otaTimedOut = true;
-            });
-          } else {
-            dataReceived = ReceivedData(checksumReceived, index);
-          }
-        }
-      },
-      (v, w) {
-        print("File data: $v | File control type: $w");
-      },
-    );
-
-    scanAndConnect();
-  }
-
-  void scanAndConnect() async {
-    await _bleHandler.scanAndConnect(
-      _deviceIdController.text,
-      (id) {
-        print("Mask ID (maskIdCallback): $id");
-      },
-      (cs) {
-        print("Connection status: $cs");
-      },
-    );
-  }
+  bool _readyToSend = false;
+  List<String> leftRightList = ["left", "right"];
+  String leftRightVal = "left";
 
   @override
   Widget build(BuildContext context) {
@@ -170,6 +100,27 @@ class _MyHomePageState extends State<MyHomePage> {
                   }).toList(),
             ),
             SizedBox(height: 20),
+            DropdownButton<String>(
+              value: leftRightVal,
+              icon: const Icon(Icons.arrow_downward),
+              elevation: 16,
+              style: const TextStyle(color: Colors.deepPurple),
+              underline: Container(height: 2, color: Colors.deepPurpleAccent),
+              onChanged: (String? value) {
+                // This is called when the user selects an item.
+                setState(() {
+                  leftRightVal = value!;
+                });
+              },
+              items:
+                  leftRightList.map<DropdownMenuItem<String>>((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    );
+                  }).toList(),
+            ),
+            SizedBox(height: 20),
             SizedBox(
               width: 250,
               child: TextField(
@@ -182,14 +133,16 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
             SizedBox(height: 20),
             ElevatedButton(
+              onPressed:
+                  _isConnected
+                      ? null
+                      : () {
+                        scanAndConnect();
+                      },
               child: Text("Scan and connect"),
-              onPressed: () {
-                scanAndConnect();
-              },
             ),
             SizedBox(height: 20),
             ElevatedButton(
-              child: Text("Perform OTA"),
               onPressed:
                   !_isConnected
                       ? null
@@ -224,7 +177,20 @@ class _MyHomePageState extends State<MyHomePage> {
                         }
 
                         await _bleHandler.sendFileControl(
-                          FileControlType.initOTALeftCore,
+                          leftRightVal == "left"
+                              ? FileControlType.initOTALeftCore
+                              : FileControlType.initOTARightCore,
+                        );
+
+                        var initCoreResetTimer = Timer(
+                          Duration(seconds: 10),
+                          () {
+                            print("Reached the 10s timeout!");
+                            _bleHandler.sendFileControl(
+                              FileControlType.resetOta,
+                            );
+                            _otaTimedOut = true;
+                          },
                         );
 
                         _ota = OtaRelated(fileContent);
@@ -235,6 +201,15 @@ class _MyHomePageState extends State<MyHomePage> {
                           if (_otaTimedOut) {
                             _otaTimedOut = false;
                             break;
+                          }
+
+                          if (!_readyToSend) {
+                            await Future.delayed(Duration(milliseconds: 10));
+                            continue;
+                          }
+
+                          if (initCoreResetTimer.isActive) {
+                            initCoreResetTimer.cancel();
                           }
 
                           if (dataSent) {
@@ -285,7 +260,9 @@ class _MyHomePageState extends State<MyHomePage> {
                           if (resp.$2 == ChunkStatus.end) {
                             print("End of file");
                             _bleHandler.sendFileControl(
-                              FileControlType.otaFileEndLeft,
+                              leftRightVal == "left"
+                                  ? FileControlType.otaFileEndLeft
+                                  : FileControlType.otaFileEndRight,
                             );
                             break;
                           }
@@ -306,10 +283,112 @@ class _MyHomePageState extends State<MyHomePage> {
                           dataSent = true;
                         }
                       },
+              child: Text("Perform OTA"),
+            ),
+            SizedBox(height: 20),
+            ElevatedButton(
+              child: Text("Reset"),
+              onPressed: () {
+                setState(() {
+                  _counter = 0;
+                  fileInitialized = false;
+                  dataReceived = null;
+                  _otaTimedOut = false;
+                  dropdownValue = "1";
+                  _deviceIdController.text = default_device_id;
+                  _isConnected = false;
+                  _readyToSend = false;
+                  leftRightVal = "left";
+                });
+
+                _bleHandler.disconnect();
+              },
             ),
           ],
         ),
       ),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    _deviceIdController.text = default_device_id;
+
+    _bleHandler.init(
+      (v) {
+        print("In connection callback: $v");
+        setState(() {
+          _isConnected = v;
+        });
+      },
+      (v) {
+        // print("Sensor data: $v");
+      },
+      (v) {
+        // print("Battery data: $v");
+      },
+      (v) {
+        // print("Touch data: $v");
+      },
+      (v, w) async {
+        print("Meta data: $v | File control type: $w");
+
+        if (v[0] == 100 && v[1] == 1) {
+          _readyToSend = true;
+        }
+
+        if (v[0] == 100 && v[1] == 2) {
+          List<int> indexData = v.sublist(v.length - 6, v.length - 4);
+          List<int> lastFour = v.sublist(v.length - 4);
+
+          int index = (indexData[0] << 8) | (indexData[1]);
+
+          // Convert to a byte buffer in big-endian
+          int result =
+              (lastFour[0] << 24) |
+              (lastFour[1] << 16) |
+              (lastFour[2] << 8) |
+              lastFour[3];
+
+          var checksumReceived = result.toRadixString(16).padLeft(8, '0');
+
+          if (checksumReceived == "00000000") {
+            var resp = _ota.getCurrentChunk();
+
+            if (resp.$1 != null) {
+              print(resp.$1!.buffer.asUint8List());
+            }
+
+            await _bleHandler.sendOTAData(resp.$1!, () {
+              // perform reset operations on the _ota
+              print("Reached the 10s timeout!");
+              _bleHandler.sendFileControl(FileControlType.resetOta);
+              _otaTimedOut = true;
+            });
+          } else {
+            dataReceived = ReceivedData(checksumReceived, index);
+          }
+        }
+      },
+      (v, w) {
+        print("File data: $v | File control type: $w");
+      },
+    );
+
+    scanAndConnect();
+  }
+
+  void scanAndConnect() async {
+    await _bleHandler.scanAndConnect(
+      _deviceIdController.text,
+      (id) {
+        print("Mask ID (maskIdCallback): $id");
+      },
+      (cs) {
+        print("Connection status: $cs");
+      },
     );
   }
 }
