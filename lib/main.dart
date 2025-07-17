@@ -63,7 +63,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    print("isConnected: $_isConnected");
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -318,7 +317,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
     _bleHandler.init(
       (v) {
-        print("In connection callback: $v");
         setState(() {
           _isConnected = v;
         });
@@ -334,6 +332,10 @@ class _MyHomePageState extends State<MyHomePage> {
       },
       (v, w) async {
         print("Meta data: $v | File control type: $w");
+
+        if (v[0] == 100 && v[1] == 4) {
+          print("Final Metadata message received");
+        }
 
         if (v[0] == 100 && v[1] == 1) {
           _readyToSend = true;
