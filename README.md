@@ -1,16 +1,12 @@
-# n2v2_test
+# Nocturnal Firmware Loader
 
-A new Flutter project.
+Helps with loading firmware onto left and right cores.
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+Once you clone the repository you should be able to run one of the following commands in the project path,
 
-A few resources to get you started if this is your first Flutter project:
+`make run` => runs the app
+`make release` => runs the app in release mode
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+When prompted with devices to connect to select the Mac OS option. This is designed for Mac OS specifically.
