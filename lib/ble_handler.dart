@@ -315,18 +315,6 @@ class BLEHandler {
     }
   }
 
-  String _toHexaDecimalString(List<int> data) {
-    String hexString = data
-        .map((n) {
-          return n
-              .toRadixString(16)
-              .padLeft(2, '0'); // Convert to hex and pad to 2 characters
-        })
-        .join('');
-
-    return hexString;
-  }
-
   // Update settings and get data
   Future<bool> updateSettings(List<int> writeArr) async {
     if (_isConnected && maskControl != null) {

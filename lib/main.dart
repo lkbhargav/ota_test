@@ -1,17 +1,19 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:n2v2_test/ble_handler.dart';
-import 'package:n2v2_test/ota_related.dart';
+import 'package:nocturnal_firmware_loader/ble_handler.dart';
+import 'package:nocturnal_firmware_loader/ota_related.dart';
 
 void main() {
   runApp(const MyApp());
 }
 
-const default_device_id = "NocturnalCheck";
+const defaultDeviceId = "NocturnalCheck";
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -54,7 +56,6 @@ class _MyHomePageState extends State<MyHomePage> {
   ReceivedData? dataReceived;
   bool _otaTimedOut = false;
   List<String> list = ["1", "2", "3", "Custom"];
-  String dropdownValue = "1";
   final TextEditingController _deviceIdController = TextEditingController();
   bool _isConnected = false;
   bool _readyToSend = false;
@@ -76,27 +77,6 @@ class _MyHomePageState extends State<MyHomePage> {
             Text(
               '$_counter',
               style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            SizedBox(height: 20),
-            DropdownButton<String>(
-              value: dropdownValue,
-              icon: const Icon(Icons.arrow_downward),
-              elevation: 16,
-              style: const TextStyle(color: Colors.deepPurple),
-              underline: Container(height: 2, color: Colors.deepPurpleAccent),
-              onChanged: (String? value) {
-                // This is called when the user selects an item.
-                setState(() {
-                  dropdownValue = value!;
-                });
-              },
-              items:
-                  list.map<DropdownMenuItem<String>>((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text(value),
-                    );
-                  }).toList(),
             ),
             SizedBox(height: 20),
             DropdownButton<String>(
@@ -146,34 +126,17 @@ class _MyHomePageState extends State<MyHomePage> {
                   !_isConnected
                       ? null
                       : () async {
-                        var filename = 'assets/ota_left.bin';
+                        final result = await FilePicker.platform.pickFiles();
 
-                        switch (dropdownValue) {
-                          case '2':
-                            filename = 'assets/mkrzerol.bin';
-                            break;
-                          case '3':
-                            filename = 'assets/wbootloader.bin';
-                            break;
+                        if (result == null || result.files.isEmpty) {
+                          return;
                         }
 
-                        var fileContent;
+                        final file = result.files.first;
+                        if (file.path == null) return;
 
-                        if (dropdownValue == 'Custom') {
-                          final result = await FilePicker.platform.pickFiles();
-
-                          if (result == null || result.files.isEmpty) {
-                            return;
-                          }
-
-                          final file = result.files.first;
-                          if (file.path == null) return;
-
-                          final bytes = await File(file.path!).readAsBytes();
-                          fileContent = ByteData.view(bytes.buffer);
-                        } else {
-                          fileContent = await rootBundle.load(filename);
-                        }
+                        final bytes = await File(file.path!).readAsBytes();
+                        var fileContent = ByteData.view(bytes.buffer);
 
                         await _bleHandler.sendFileControl(
                           leftRightVal == "left"
@@ -235,7 +198,6 @@ class _MyHomePageState extends State<MyHomePage> {
                               dataReceived = null;
                               dataSent = false;
                             } else {
-                              // TODO: send out a reset signal
                               print(
                                 "Aborting the update, something is off with checksum's or index",
                               );
@@ -262,6 +224,12 @@ class _MyHomePageState extends State<MyHomePage> {
                               leftRightVal == "left"
                                   ? FileControlType.otaFileEndLeft
                                   : FileControlType.otaFileEndRight,
+                            );
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Firmware load is complete!'),
+                              ),
                             );
                             break;
                           }
@@ -293,8 +261,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   fileInitialized = false;
                   dataReceived = null;
                   _otaTimedOut = false;
-                  dropdownValue = "1";
-                  _deviceIdController.text = default_device_id;
+                  _deviceIdController.text = defaultDeviceId;
                   _isConnected = false;
                   _readyToSend = false;
                   leftRightVal = "left";
@@ -313,7 +280,7 @@ class _MyHomePageState extends State<MyHomePage> {
   void initState() {
     super.initState();
 
-    _deviceIdController.text = default_device_id;
+    _deviceIdController.text = defaultDeviceId;
 
     _bleHandler.init(
       (v) {
